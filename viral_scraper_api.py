@@ -31,70 +31,98 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'TU_API_KEY_AQUI')
 # ============================================
 async def scrape_tiktok_real(hashtag, cantidad=10):
     """
-    Scraping real de TikTok usando TikTokApi
+    Scraping real de TikTok usando TikTokApi - VERSIÓN SIMPLIFICADA
     """
     videos = []
     
+    if not TIKTOK_AVAILABLE:
+        print("⚠️ TikTok no disponible en este entorno")
+        return []
+    
     try:
-        async with TikTokApi() as api:
-            await api.create_sessions(
-                ms_tokens=[os.getenv('TIKTOK_MS_TOKEN')],
-                num_sessions=1,
-                sleep_after=3
-            )
-            
-            # Buscar por hashtag
-            tag = api.hashtag(name=hashtag)
-            
-            async for video in tag.videos(count=cantidad):
-                try:
-                    stats = video.stats
-                    
-                    # Calcular engagement rate
-                    total_interactions = (
-                        stats.get('diggCount', 0) + 
-                        stats.get('commentCount', 0) + 
-                        stats.get('shareCount', 0)
-                    )
-                    views = stats.get('playCount', 1)
-                    engagement_rate = (total_interactions / views * 100) if views > 0 else 0
-                    
-                    # Calcular viral score (fórmula mejorada)
-                    viral_score = (
-                        stats.get('diggCount', 0) * 1 +
-                        stats.get('commentCount', 0) * 3 +
-                        stats.get('shareCount', 0) * 5 +
-                        (engagement_rate * 100)
-                    )
-                    
-                    video_data = {
-                        'platform': 'TikTok',
-                        'video_id': video.id,
-                        'video_url': f"https://www.tiktok.com/@{video.author.username}/video/{video.id}",
-                        'author': video.author.username,
-                        'author_followers': video.author.stats.get('followerCount', 0),
-                        'description': video.desc,
-                        'hashtag': hashtag,
-                        'views': views,
-                        'likes': stats.get('diggCount', 0),
-                        'comments': stats.get('commentCount', 0),
-                        'shares': stats.get('shareCount', 0),
-                        'engagement_rate': round(engagement_rate, 2),
-                        'viral_score': int(viral_score),
-                        'duration': video.video.duration,
-                        'created_at': datetime.fromtimestamp(video.createTime).isoformat(),
-                        'music': video.music.title if video.music else None,
-                        'scraped_at': datetime.now().isoformat()
-                    }
-                    
-                    videos.append(video_data)
-                    
-                except Exception as e:
-                    print(f"Error procesando video TikTok: {e}")
-                    continue
-                    
+        # Crear API sin browser context (más simple)
+        api = TikTokApi()
+        
+        # Intentar crear sesión con MS Token si está disponible
+        ms_token = os.getenv('TIKTOK_MS_TOKEN')
+        if ms_token:
+            try:
+                await api.create_sessions(
+                    ms_tokens=[ms_token],
+                    num_sessions=1,
+                    sleep_after=3
+                )
+            except Exception as e:
+                print(f"⚠️ No se pudo crear sesión con MS Token: {e}")
+                # Continuar sin sesión (puede funcionar con menos videos)
+        
+        # Buscar por hashtag
+        tag = api.hashtag(name=hashtag)
+        
+        count = 0
+        async for video in tag.videos(count=cantidad):
+            if count >= cantidad:
+                break
+                
+            try:
+                # Obtener estadísticas
+                stats = video.stats if hasattr(video, 'stats') else {}
+                author = video.author if hasattr(video, 'author') else {}
+                
+                # Obtener datos con fallbacks
+                views = stats.get('playCount', 0) if stats else 0
+                likes = stats.get('diggCount', 0) if stats else 0
+                comments_count = stats.get('commentCount', 0) if stats else 0
+                shares = stats.get('shareCount', 0) if stats else 0
+                
+                # Calcular engagement rate
+                total_interactions = likes + comments_count + shares
+                engagement_rate = (total_interactions / views * 100) if views > 0 else 0
+                
+                # Calcular viral score
+                viral_score = (
+                    likes * 1 +
+                    comments_count * 3 +
+                    shares * 5 +
+                    (engagement_rate * 100)
+                )
+                
+                # Obtener username del autor
+                author_username = author.username if hasattr(author, 'username') else "unknown"
+                author_followers = author.stats.get('followerCount', 0) if hasattr(author, 'stats') else 0
+                
+                video_data = {
+                    'platform': 'TikTok',
+                    'video_id': video.id if hasattr(video, 'id') else f"tiktok_{count}",
+                    'video_url': f"https://www.tiktok.com/@{author_username}/video/{video.id}" if hasattr(video, 'id') else "",
+                    'author': author_username,
+                    'author_followers': author_followers,
+                    'description': video.desc if hasattr(video, 'desc') else "",
+                    'hashtag': hashtag,
+                    'views': views,
+                    'likes': likes,
+                    'comments': comments_count,
+                    'shares': shares,
+                    'engagement_rate': round(engagement_rate, 2),
+                    'viral_score': int(viral_score),
+                    'duration': video.video.duration if hasattr(video, 'video') and hasattr(video.video, 'duration') else 0,
+                    'created_at': datetime.fromtimestamp(video.createTime).isoformat() if hasattr(video, 'createTime') else datetime.now().isoformat(),
+                    'music': video.music.title if hasattr(video, 'music') and hasattr(video.music, 'title') else None,
+                    'scraped_at': datetime.now().isoformat()
+                }
+                
+                videos.append(video_data)
+                count += 1
+                print(f"✅ TikTok video {count}/{cantidad} scrapeado")
+                
+            except Exception as e:
+                print(f"⚠️ Error procesando video TikTok: {e}")
+                continue
+                
     except Exception as e:
-        print(f"Error general TikTok: {e}")
+        print(f"❌ Error general TikTok: {e}")
+        import traceback
+        traceback.print_exc()
         return []
     
     # Ordenar por viral_score descendente
