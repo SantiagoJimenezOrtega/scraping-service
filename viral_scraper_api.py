@@ -31,16 +31,19 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'TU_API_KEY_AQUI')
 # ============================================
 async def scrape_tiktok_real(hashtag, cantidad=10):
     """
-    Scraping real de TikTok usando TikTokApi - VERSIÓN SIMPLIFICADA
+    Scraping real de TikTok usando TikTokApi - VERSIÓN AUTOCONTENIDA
     """
     videos = []
     
-    if not TIKTOK_AVAILABLE:
-        print("⚠️ TikTok no disponible en este entorno")
+    # Verificar si TikTokApi está disponible
+    try:
+        from TikTokApi import TikTokApi
+    except ImportError:
+        print("⚠️ TikTokApi no está instalado")
         return []
     
     try:
-        # Crear API sin browser context (más simple)
+        # Crear API
         api = TikTokApi()
         
         # Intentar crear sesión con MS Token si está disponible
@@ -52,9 +55,9 @@ async def scrape_tiktok_real(hashtag, cantidad=10):
                     num_sessions=1,
                     sleep_after=3
                 )
+                print(f"✅ TikTok sesión creada con MS Token")
             except Exception as e:
                 print(f"⚠️ No se pudo crear sesión con MS Token: {e}")
-                # Continuar sin sesión (puede funcionar con menos videos)
         
         # Buscar por hashtag
         tag = api.hashtag(name=hashtag)
@@ -65,17 +68,16 @@ async def scrape_tiktok_real(hashtag, cantidad=10):
                 break
                 
             try:
-                # Obtener estadísticas
-                stats = video.stats if hasattr(video, 'stats') else {}
-                author = video.author if hasattr(video, 'author') else {}
+                # Obtener estadísticas con fallbacks
+                stats = getattr(video, 'stats', {})
+                author = getattr(video, 'author', None)
                 
-                # Obtener datos con fallbacks
                 views = stats.get('playCount', 0) if stats else 0
                 likes = stats.get('diggCount', 0) if stats else 0
                 comments_count = stats.get('commentCount', 0) if stats else 0
                 shares = stats.get('shareCount', 0) if stats else 0
                 
-                # Calcular engagement rate
+                # Calcular engagement
                 total_interactions = likes + comments_count + shares
                 engagement_rate = (total_interactions / views * 100) if views > 0 else 0
                 
@@ -87,17 +89,27 @@ async def scrape_tiktok_real(hashtag, cantidad=10):
                     (engagement_rate * 100)
                 )
                 
-                # Obtener username del autor
-                author_username = author.username if hasattr(author, 'username') else "unknown"
-                author_followers = author.stats.get('followerCount', 0) if hasattr(author, 'stats') else 0
+                # Datos del autor
+                author_username = getattr(author, 'username', 'unknown') if author else 'unknown'
+                author_stats = getattr(author, 'stats', {}) if author else {}
+                author_followers = author_stats.get('followerCount', 0) if author_stats else 0
+                
+                # Datos del video
+                video_id = getattr(video, 'id', f"tiktok_{count}")
+                video_desc = getattr(video, 'desc', '')
+                video_obj = getattr(video, 'video', None)
+                video_duration = getattr(video_obj, 'duration', 0) if video_obj else 0
+                video_music = getattr(video, 'music', None)
+                music_title = getattr(video_music, 'title', None) if video_music else None
+                create_time = getattr(video, 'createTime', None)
                 
                 video_data = {
                     'platform': 'TikTok',
-                    'video_id': video.id if hasattr(video, 'id') else f"tiktok_{count}",
-                    'video_url': f"https://www.tiktok.com/@{author_username}/video/{video.id}" if hasattr(video, 'id') else "",
+                    'video_id': str(video_id),
+                    'video_url': f"https://www.tiktok.com/@{author_username}/video/{video_id}",
                     'author': author_username,
                     'author_followers': author_followers,
-                    'description': video.desc if hasattr(video, 'desc') else "",
+                    'description': video_desc,
                     'hashtag': hashtag,
                     'views': views,
                     'likes': likes,
@@ -105,19 +117,21 @@ async def scrape_tiktok_real(hashtag, cantidad=10):
                     'shares': shares,
                     'engagement_rate': round(engagement_rate, 2),
                     'viral_score': int(viral_score),
-                    'duration': video.video.duration if hasattr(video, 'video') and hasattr(video.video, 'duration') else 0,
-                    'created_at': datetime.fromtimestamp(video.createTime).isoformat() if hasattr(video, 'createTime') else datetime.now().isoformat(),
-                    'music': video.music.title if hasattr(video, 'music') and hasattr(video.music, 'title') else None,
+                    'duration': video_duration,
+                    'created_at': datetime.fromtimestamp(create_time).isoformat() if create_time else datetime.now().isoformat(),
+                    'music': music_title,
                     'scraped_at': datetime.now().isoformat()
                 }
                 
                 videos.append(video_data)
                 count += 1
-                print(f"✅ TikTok video {count}/{cantidad} scrapeado")
+                print(f"✅ TikTok video {count}/{cantidad} scrapeado: {video_id}")
                 
             except Exception as e:
                 print(f"⚠️ Error procesando video TikTok: {e}")
                 continue
+        
+        print(f"✅ TikTok scraping completado: {len(videos)} videos")
                 
     except Exception as e:
         print(f"❌ Error general TikTok: {e}")
@@ -125,7 +139,7 @@ async def scrape_tiktok_real(hashtag, cantidad=10):
         traceback.print_exc()
         return []
     
-    # Ordenar por viral_score descendente
+    # Ordenar por viral_score
     videos.sort(key=lambda x: x['viral_score'], reverse=True)
     return videos
 
